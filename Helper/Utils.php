@@ -15,14 +15,33 @@ class Utils extends \Lime\Helper {
    * @return string generated slug
    */
   public function generate($format, $name, $entry, $lang = FALSE) {
-    $parts = explode("/", $format);
-    $newParts = [];
-    foreach ($parts as $part) {
+
+    // split by "/" or "_" but keep the separators
+    $tokens = preg_split('~([/_])~', $format, -1, PREG_SPLIT_DELIM_CAPTURE);
+
+    $out = [];
+
+    foreach ($tokens as $token) {
+
+      if ($token === '' || $token === null) {
+        continue;
+      }
+
+      // keep separators as-is
+      if ($token === '/' || $token === '_') {
+        $out[] = $token;
+        continue;
+      }
+
+      $part = $token;
+
       if ((bool) preg_match('/\[([a-zA-Z]+):([a-zA-Z-0-9_\|]+)\]/', $part)) {
+
         $part = str_replace(['[', ']'], '', $part);
         list($tokenKey, $tokenValue) = explode(":", $part);
 
         switch ($tokenKey) {
+
           case 'lang':
             $part = '';
             if ($lang) {
@@ -55,6 +74,7 @@ class Utils extends \Lime\Helper {
               $link = $entry[$colName]['link'];
               $id = $entry[$colName]['_id'];
               $linkedEntry = $this->app->module('collections')->findOne($link, ["_id" => $id]);
+
               if ($linkedEntry && isset($linkedEntry[$colField]) && !is_array($linkedEntry[$colField])) {
                 if (isset($linkedEntry["{$colField}_{$lang}"])) {
                   $part = $linkedEntry["{$colField}_{$lang}"];
@@ -80,10 +100,15 @@ class Utils extends \Lime\Helper {
         }
       }
 
-      $newParts[] = $this->app->helper('utils')->sluggify($part);
+      $out[] = $this->app->helper('utils')->sluggify($part);
     }
 
-    $slug = trim(implode('/', $newParts));
+    $slug = implode('', $out);
+
+    // normalize and trim separators
+    $slug = trim($slug, "/_");
+    $slug = preg_replace('~/{2,}~', '/', $slug);
+    $slug = preg_replace('~_{2,}~', '_', $slug);
 
     return $slug;
   }
@@ -99,7 +124,10 @@ class Utils extends \Lime\Helper {
    * @return string uniquely generated slug
    */
   public function getUnique($name, $slug, $fieldName, $_id = NULL) {
-    $slug = str_replace('//', '/', $slug);
+
+    $slug = trim($slug, "/_");
+    $slug = preg_replace('~/{2,}~', '/', $slug);
+    $slug = preg_replace('~_{2,}~', '_', $slug);
 
     // Check if slug is unique.
     $criteria[$fieldName] = $slug;
@@ -119,6 +147,7 @@ class Utils extends \Lime\Helper {
     if ($count > 0) {
       $_slug = $slug;
       $slug = "{$slug}-{$count}";
+
       // Second check as we have now the numeric prefix value.
       if ($this->app->storage->type === 'mongodb') {
         $criteria[$fieldName] = new \MongoDB\BSON\Regex("^{$_slug}-[0-9]+$");
@@ -126,7 +155,9 @@ class Utils extends \Lime\Helper {
       else {
         $criteria[$fieldName] = ['$regex' => "/^{$_slug}-[0-9]+$/"];
       }
+
       $count = $this->app->module('collections')->count($name, $criteria);
+
       if ($count > 0) {
         $count++;
         $slug = "{$_slug}-{$count}";
@@ -137,4 +168,3 @@ class Utils extends \Lime\Helper {
   }
 
 }
-
